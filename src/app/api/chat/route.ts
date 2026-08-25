@@ -16,6 +16,28 @@ const CALENDAR_IDS = [
   "c_afa76cbdf84dbd4a161f0bc911d79ce6e2454b3066edc22997431367b543b823",
 ];
 
+async function fetchFormerVicarsDetails(baseUrl: string): Promise<string> {
+  try {
+    const res = await fetch(`${baseUrl}/api/about/former-vicars`, { cache: "no-store" });
+    if (!res.ok) return "Former vicars details unavailable.";
+    const data = await res.json();
+    if (Array.isArray(data) && data.length > 0) {
+      return data
+        .filter((vicar: any) => vicar.name)
+        .map((vicar: any) => {
+          const parts = [];
+          if (vicar.name) parts.push(vicar.name);
+          if (vicar.period) parts.push(`(${vicar.period})`);
+          return `- ${parts.join(" ")}`;
+        })
+        .join("\n");
+    }
+    return "Former vicars details unavailable.";
+  } catch {
+    return "Former vicars details unavailable.";
+  }
+}
+
 async function fetchAboutDetails(baseUrl: string): Promise<string> {
   try {
     const res = await fetch(`${baseUrl}/api/about`, { cache: "no-store" });
@@ -196,7 +218,7 @@ async function fetchUpcomingEvents(baseUrl: string): Promise<string> {
   }
 }
 
-function buildSystemPrompt(eventsContext: string, contactContext: string, achenContext: string, leadershipContext: string, ministriesContext: string, aboutContext: string): string {
+function buildSystemPrompt(eventsContext: string, contactContext: string, achenContext: string, leadershipContext: string, ministriesContext: string, aboutContext: string, formerVicarsContext: string): string {
   return `You are a friendly and helpful assistant for Bethel Mar Thoma Church Sydney.
 You help visitors with information about the church, service times, location, ministries, and events.
 
@@ -218,6 +240,9 @@ ${achenContext}
 
 CHURCH LEADERSHIP & COMMITTEE MEMBERS:
 ${leadershipContext}
+
+FORMER VICARS (with their service periods):
+${formerVicarsContext}
 
 MINISTRIES & ORGANISATIONS:
 ${ministriesContext}
@@ -258,15 +283,16 @@ export async function POST(request: NextRequest) {
     const baseUrl = `${protocol}://${host}`;
 
     // Fetch real data from church APIs
-    const [eventsContext, contactContext, achenContext, leadershipContext, ministriesContext, aboutContext] = await Promise.all([
+    const [eventsContext, contactContext, achenContext, leadershipContext, ministriesContext, aboutContext, formerVicarsContext] = await Promise.all([
       fetchUpcomingEvents(baseUrl),
       fetchContactDetails(baseUrl),
       fetchAchenDetails(baseUrl),
       fetchLeadershipDetails(baseUrl),
       fetchMinistriesDetails(baseUrl),
       fetchAboutDetails(baseUrl),
+      fetchFormerVicarsDetails(baseUrl),
     ]);
-    const systemPrompt = buildSystemPrompt(eventsContext, contactContext, achenContext, leadershipContext, ministriesContext, aboutContext);
+    const systemPrompt = buildSystemPrompt(eventsContext, contactContext, achenContext, leadershipContext, ministriesContext, aboutContext, formerVicarsContext);
 
     const url = `${AZURE_OPENAI_ENDPOINT}/openai/deployments/${AZURE_OPENAI_DEPLOYMENT}/chat/completions?api-version=${AZURE_OPENAI_API_VERSION}`;
 
