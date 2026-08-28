@@ -5,6 +5,25 @@ const AZURE_OPENAI_API_KEY = process.env.AZURE_OPENAI_API_KEY || "";
 const AZURE_OPENAI_DEPLOYMENT = process.env.AZURE_OPENAI_DEPLOYMENT || "gpt-4.1-mini";
 const AZURE_OPENAI_API_VERSION = process.env.AZURE_OPENAI_API_VERSION || "2024-12-01-preview";
 
+// In-memory cache shared across all requests (15 min TTL)
+const CACHE_TTL_MS = 15 * 60 * 1000; // 15 minutes
+interface CacheEntry {
+  data: string;
+  timestamp: number;
+}
+const contextCache = new Map<string, CacheEntry>();
+
+async function getCached(key: string, fetcher: () => Promise<string>): Promise<string> {
+  const cached = contextCache.get(key);
+  const now = Date.now();
+  if (cached && now - cached.timestamp < CACHE_TTL_MS) {
+    return cached.data;
+  }
+  const data = await fetcher();
+  contextCache.set(key, { data, timestamp: now });
+  return data;
+}
+
 const CALENDAR_IDS = [
   "c_56a6e0c46fa5f864d1689c4c64d903df60090f3748e6c8f8fe373fb5fb5ba73c",
   "c_006dcca0d08d706b39da31d4f09a25289f56c71d50be6fbd027631cd21fba6e5",
@@ -282,15 +301,15 @@ export async function POST(request: NextRequest) {
     const host = request.headers.get("host") || "localhost:3000";
     const baseUrl = `${protocol}://${host}`;
 
-    // Fetch real data from church APIs
+    // Fetch real data from church APIs (cached for 15 minutes, shared across all users)
     const [eventsContext, contactContext, achenContext, leadershipContext, ministriesContext, aboutContext, formerVicarsContext] = await Promise.all([
-      fetchUpcomingEvents(baseUrl),
-      fetchContactDetails(baseUrl),
-      fetchAchenDetails(baseUrl),
-      fetchLeadershipDetails(baseUrl),
-      fetchMinistriesDetails(baseUrl),
-      fetchAboutDetails(baseUrl),
-      fetchFormerVicarsDetails(baseUrl),
+      getCached("events", () => fetchUpcomingEvents(baseUrl)),
+      getCached("contact", () => fetchContactDetails(baseUrl)),
+      getCached("achen", () => fetchAchenDetails(baseUrl)),
+      getCached("leadership", () => fetchLeadershipDetails(baseUrl)),
+      getCached("ministries", () => fetchMinistriesDetails(baseUrl)),
+      getCached("about", () => fetchAboutDetails(baseUrl)),
+      getCached("formerVicars", () => fetchFormerVicarsDetails(baseUrl)),
     ]);
     const systemPrompt = buildSystemPrompt(eventsContext, contactContext, achenContext, leadershipContext, ministriesContext, aboutContext, formerVicarsContext);
 
